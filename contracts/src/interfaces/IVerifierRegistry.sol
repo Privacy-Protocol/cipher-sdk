@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.30;
 
 import {CipherTypes} from "../types/CipherTypes.sol";
 
@@ -19,7 +19,13 @@ interface IVerifierRegistry {
         bool allowed
     );
 
-    function getVerifier(bytes32 verifierId) external view returns (CipherTypes.VerifierConfig memory);
+    function getVerifier(
+        bytes32 verifierId
+    ) external view returns (CipherTypes.VerifierConfig memory);
 
-    function isVerifierAllowed(bytes32 appId, bytes32 actionType, bytes32 verifierId) external view returns (bool);
+    function isVerifierAllowed(
+        bytes32 appId,
+        bytes32 actionType,
+        bytes32 verifierId
+    ) external view returns (bool);
 }

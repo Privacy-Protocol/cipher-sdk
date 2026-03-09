@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.30;
 
 import {IVerifierRegistry} from "../interfaces/IVerifierRegistry.sol";
 import {CipherTypes} from "../types/CipherTypes.sol";

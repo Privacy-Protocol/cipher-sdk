@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.30;
 
 import {CipherTypes} from "../types/CipherTypes.sol";
 
@@ -17,7 +17,9 @@ interface ICipherRouter {
         address sender
     );
 
-    function submitAction(CipherTypes.ActionRequest calldata req) external returns (bytes32 actionId);
+    function submitAction(
+        CipherTypes.ActionRequest calldata req
+    ) external returns (bytes32 actionId);
 
     function adapterRegistry() external view returns (address);
 
@@ -25,7 +27,10 @@ interface ICipherRouter {
 
     function nullifierStore() external view returns (address);
 
-    function computeActionId(CipherTypes.ActionRequest calldata req, address sender) external view returns (bytes32);
+    function computeActionId(
+        CipherTypes.ActionRequest calldata req,
+        address sender
+    ) external view returns (bytes32);
 
     function computeNullifierKey(
         bytes32 appId,

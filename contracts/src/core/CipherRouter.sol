@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.30;
 
 import {ICipherRouter} from "../interfaces/ICipherRouter.sol";
 import {IAdapterRegistry} from "../interfaces/IAdapterRegistry.sol";
@@ -106,10 +106,12 @@ contract CipherRouter is ICipherRouter, Ownable {
             config.publicInputSchemaHash
         );
 
-        bool proofOk = ICircuitVerifier(config.verifier).verify(
-            req.proof,
-            req.publicInputs
-        );
+        bool proofOk;
+        try ICircuitVerifier(config.verifier).verify(req.proof, req.publicInputs) returns (bool ok) {
+            proofOk = ok;
+        } catch {
+            proofOk = false;
+        }
         if (!proofOk) revert InvalidProof(req.verifierId);
 
         actionId = computeActionId(req, msg.sender);

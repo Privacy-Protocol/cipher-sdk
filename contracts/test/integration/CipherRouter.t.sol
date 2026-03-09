@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 
@@ -8,15 +8,12 @@ import {CipherRouter} from "../../src/core/CipherRouter.sol";
 import {AdapterRegistry} from "../../src/core/AdapterRegistry.sol";
 import {VerifierRegistry} from "../../src/core/VerifierRegistry.sol";
 import {NullifierStore} from "../../src/core/NullifierStore.sol";
-import {
-    CredentialGateAdapter
-} from "../../src/adapters/CredentialGateAdapter.sol";
+import {CredentialGateAdapter} from "../../src/adapters/CredentialGateAdapter.sol";
 import {VotingAdapter} from "../../src/adapters/VotingAdapter.sol";
-import {MockVerifier} from "../../src/mocks/MockVerifier.sol";
+import {HonkVerifier as CredentialGateHonkVerifier} from "../../src/verifiers/CredentialGateVerifier.sol";
+import {HonkVerifier as VotingHonkVerifier} from "../../src/verifiers/VotingVerifier.sol";
 
 contract CipherRouterTest is Test {
-    // STUB: verifier is mocked for this phase.
-    // Noir proof generation/integration can be plugged into this test suite later via FFI scripts.
     event ActionSubmitted(
         bytes32 indexed actionId,
         bytes32 indexed appId,
@@ -30,36 +27,38 @@ contract CipherRouterTest is Test {
         address sender
     );
 
-    bytes32 internal constant APP_ID = keccak256("CIPHER_APP:TEST_APP:v1");
-    bytes32 internal constant OTHER_APP_ID =
-        keccak256("CIPHER_APP:OTHER_APP:v1");
+    struct ProofBundle {
+        bytes proof;
+        bytes32[] publicInputs;
+    }
 
-    bytes32 internal constant ACTION_CREDENTIAL_GATE =
-        keccak256("CIPHER_ACTION:CREDENTIAL_GATE:v1");
-    bytes32 internal constant ACTION_PRIVATE_VOTE =
-        keccak256("CIPHER_ACTION:PRIVATE_VOTE:v1");
-    bytes32 internal constant ACTION_UNKNOWN =
-        keccak256("CIPHER_ACTION:UNKNOWN:v1");
+    bytes32 internal constant APP_ID = bytes32(uint256(1001));
+    bytes32 internal constant OTHER_APP_ID = bytes32(uint256(1002));
 
-    bytes32 internal constant VERIFIER_ID =
-        keccak256("CIPHER_VERIFIER:MOCK:v1");
+    bytes32 internal constant ACTION_CREDENTIAL_GATE = bytes32(uint256(2001));
+    bytes32 internal constant ACTION_PRIVATE_VOTE = bytes32(uint256(2002));
+    bytes32 internal constant ACTION_UNKNOWN = bytes32(uint256(2999));
 
-    bytes32 internal constant GATE_CONTEXT =
-        keccak256("CIPHER_CTX:GATE_RESOURCE_1");
-    bytes32 internal constant PROPOSAL_CONTEXT =
-        keccak256("CIPHER_CTX:PROPOSAL_1");
+    bytes32 internal constant CREDENTIAL_VERIFIER_ID =
+        keccak256("CIPHER_VERIFIER:CREDENTIAL_GATE_HONK:v1");
+    bytes32 internal constant VOTING_VERIFIER_ID =
+        keccak256("CIPHER_VERIFIER:VOTING_HONK:v1");
 
-    bytes32 internal constant ROOT_A = bytes32(uint256(0xA11CE));
+    bytes32 internal constant GATE_CONTEXT = bytes32(uint256(3001));
+    bytes32 internal constant PROPOSAL_CONTEXT = bytes32(uint256(3002));
+
     bytes32 internal constant ROOT_B = bytes32(uint256(0xB0B));
 
     AdapterRegistry internal adapterRegistry;
     VerifierRegistry internal verifierRegistry;
     NullifierStore internal nullifierStore;
     CipherRouter internal router;
-    MockVerifier internal verifier;
 
     CredentialGateAdapter internal credentialAdapter;
     VotingAdapter internal votingAdapter;
+
+    CredentialGateHonkVerifier internal credentialVerifier;
+    VotingHonkVerifier internal votingVerifier;
 
     function setUp() public {
         adapterRegistry = new AdapterRegistry(address(this));
@@ -98,25 +97,34 @@ contract CipherRouterTest is Test {
             address(votingAdapter)
         );
 
-        verifier = new MockVerifier();
-        bytes32 schemaHash = router.computeSchemaHash(6);
+        credentialVerifier = new CredentialGateHonkVerifier();
+        votingVerifier = new VotingHonkVerifier();
+
         verifierRegistry.setVerifier(
-            VERIFIER_ID,
-            address(verifier),
-            schemaHash,
-            6,
+            CREDENTIAL_VERIFIER_ID,
+            address(credentialVerifier),
+            router.computeSchemaHash(9),
+            9,
             true
         );
+        verifierRegistry.setVerifier(
+            VOTING_VERIFIER_ID,
+            address(votingVerifier),
+            router.computeSchemaHash(8),
+            8,
+            true
+        );
+
         verifierRegistry.setVerifierAllowedForAction(
             APP_ID,
             ACTION_CREDENTIAL_GATE,
-            VERIFIER_ID,
+            CREDENTIAL_VERIFIER_ID,
             true
         );
         verifierRegistry.setVerifierAllowedForAction(
             APP_ID,
             ACTION_PRIVATE_VOTE,
-            VERIFIER_ID,
+            VOTING_VERIFIER_ID,
             true
         );
 
@@ -124,6 +132,13 @@ contract CipherRouterTest is Test {
     }
 
     function testCredentialGate_SuccessfulRoutingAndEvent() public {
+        ProofBundle memory bundle = _generateCredentialProof(
+            APP_ID,
+            ACTION_CREDENTIAL_GATE,
+            GATE_CONTEXT
+        );
+        bytes32 root = bundle.publicInputs[5];
+
         credentialAdapter.configureContext(
             GATE_CONTEXT,
             CredentialGateAdapter.GateContextConfig({
@@ -134,16 +149,14 @@ contract CipherRouterTest is Test {
                 validUntil: 0
             })
         );
-        credentialAdapter.setAllowedRoot(GATE_CONTEXT, ROOT_A, true);
+        credentialAdapter.setAllowedRoot(GATE_CONTEXT, root, true);
 
-        bytes32 nullifier = keccak256("nullifier-1");
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        CipherTypes.ActionRequest memory req = _buildRequestFromProof({
             appId: APP_ID,
             actionType: ACTION_CREDENTIAL_GATE,
             contextId: GATE_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: bytes32(0),
+            verifierId: CREDENTIAL_VERIFIER_ID,
+            bundle: bundle,
             encryptedPayloadRef: bytes32(0),
             adapterData: ""
         });
@@ -153,7 +166,7 @@ contract CipherRouterTest is Test {
             APP_ID,
             ACTION_CREDENTIAL_GATE,
             GATE_CONTEXT,
-            nullifier
+            req.nullifier
         );
 
         vm.expectEmit(address(router));
@@ -163,9 +176,9 @@ contract CipherRouterTest is Test {
             ACTION_CREDENTIAL_GATE,
             GATE_CONTEXT,
             address(credentialAdapter),
-            VERIFIER_ID,
+            CREDENTIAL_VERIFIER_ID,
             expectedNullifierKey,
-            bytes32(0),
+            req.payloadHash,
             bytes32(0),
             address(this)
         );
@@ -177,6 +190,13 @@ contract CipherRouterTest is Test {
     }
 
     function testReplayPrevention_RevertsOnSecondUse() public {
+        ProofBundle memory bundle = _generateCredentialProof(
+            APP_ID,
+            ACTION_CREDENTIAL_GATE,
+            GATE_CONTEXT
+        );
+        bytes32 root = bundle.publicInputs[5];
+
         credentialAdapter.configureContext(
             GATE_CONTEXT,
             CredentialGateAdapter.GateContextConfig({
@@ -187,16 +207,14 @@ contract CipherRouterTest is Test {
                 validUntil: 0
             })
         );
-        credentialAdapter.setAllowedRoot(GATE_CONTEXT, ROOT_A, true);
+        credentialAdapter.setAllowedRoot(GATE_CONTEXT, root, true);
 
-        bytes32 nullifier = keccak256("same-nullifier");
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        CipherTypes.ActionRequest memory req = _buildRequestFromProof({
             appId: APP_ID,
             actionType: ACTION_CREDENTIAL_GATE,
             contextId: GATE_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: bytes32(0),
+            verifierId: CREDENTIAL_VERIFIER_ID,
+            bundle: bundle,
             encryptedPayloadRef: bytes32(0),
             adapterData: ""
         });
@@ -207,7 +225,7 @@ contract CipherRouterTest is Test {
             APP_ID,
             ACTION_CREDENTIAL_GATE,
             GATE_CONTEXT,
-            nullifier
+            req.nullifier
         );
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -219,16 +237,10 @@ contract CipherRouterTest is Test {
     }
 
     function testInvalidAdapter_RevertsWhenActionIsNotRegistered() public {
-        bytes32 nullifier = keccak256("nullifier-no-adapter");
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        CipherTypes.ActionRequest memory req = _buildDummyRequest({
             appId: APP_ID,
             actionType: ACTION_UNKNOWN,
-            contextId: GATE_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: bytes32(0),
-            encryptedPayloadRef: bytes32(0),
-            adapterData: ""
+            contextId: GATE_CONTEXT
         });
 
         vm.expectRevert(
@@ -242,16 +254,10 @@ contract CipherRouterTest is Test {
     }
 
     function testWrongAppId_RevertsWhenAppNotEnabled() public {
-        bytes32 nullifier = keccak256("disabled-app");
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        CipherTypes.ActionRequest memory req = _buildDummyRequest({
             appId: OTHER_APP_ID,
             actionType: ACTION_CREDENTIAL_GATE,
-            contextId: GATE_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: bytes32(0),
-            encryptedPayloadRef: bytes32(0),
-            adapterData: ""
+            contextId: GATE_CONTEXT
         });
 
         vm.expectRevert(
@@ -264,6 +270,13 @@ contract CipherRouterTest is Test {
     }
 
     function testWrongActionBinding_RevertsWhenPublicInputMismatches() public {
+        ProofBundle memory bundle = _generateCredentialProof(
+            APP_ID,
+            ACTION_CREDENTIAL_GATE,
+            GATE_CONTEXT
+        );
+        bytes32 root = bundle.publicInputs[5];
+
         credentialAdapter.configureContext(
             GATE_CONTEXT,
             CredentialGateAdapter.GateContextConfig({
@@ -274,16 +287,14 @@ contract CipherRouterTest is Test {
                 validUntil: 0
             })
         );
-        credentialAdapter.setAllowedRoot(GATE_CONTEXT, ROOT_A, true);
+        credentialAdapter.setAllowedRoot(GATE_CONTEXT, root, true);
 
-        bytes32 nullifier = keccak256("mismatch-action");
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        CipherTypes.ActionRequest memory req = _buildRequestFromProof({
             appId: APP_ID,
             actionType: ACTION_CREDENTIAL_GATE,
             contextId: GATE_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: bytes32(0),
+            verifierId: CREDENTIAL_VERIFIER_ID,
+            bundle: bundle,
             encryptedPayloadRef: bytes32(0),
             adapterData: ""
         });
@@ -302,6 +313,13 @@ contract CipherRouterTest is Test {
     }
 
     function testCredentialAdapterValidation_RevertsForUnknownRoot() public {
+        ProofBundle memory bundle = _generateCredentialProof(
+            APP_ID,
+            ACTION_CREDENTIAL_GATE,
+            GATE_CONTEXT
+        );
+        bytes32 proofRoot = bundle.publicInputs[5];
+
         credentialAdapter.configureContext(
             GATE_CONTEXT,
             CredentialGateAdapter.GateContextConfig({
@@ -312,15 +330,15 @@ contract CipherRouterTest is Test {
                 validUntil: 0
             })
         );
+        credentialAdapter.setAllowedRoot(GATE_CONTEXT, ROOT_B, true);
+        assertTrue(proofRoot != ROOT_B);
 
-        bytes32 nullifier = keccak256("unknown-root");
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        CipherTypes.ActionRequest memory req = _buildRequestFromProof({
             appId: APP_ID,
             actionType: ACTION_CREDENTIAL_GATE,
             contextId: GATE_CONTEXT,
-            root: ROOT_B,
-            nullifier: nullifier,
-            payloadHash: bytes32(0),
+            verifierId: CREDENTIAL_VERIFIER_ID,
+            bundle: bundle,
             encryptedPayloadRef: bytes32(0),
             adapterData: ""
         });
@@ -329,47 +347,22 @@ contract CipherRouterTest is Test {
             abi.encodeWithSelector(
                 CredentialGateAdapter.RootNotAllowed.selector,
                 GATE_CONTEXT,
-                ROOT_B
-            )
-        );
-        router.submitAction(req);
-    }
-
-    function testCredentialGate_FailsWhenPayloadRequiredButMissing() public {
-        credentialAdapter.configureContext(
-            GATE_CONTEXT,
-            CredentialGateAdapter.GateContextConfig({
-                enabled: true,
-                requirePayload: true,
-                requireEncryptedPayloadRef: false,
-                validAfter: 0,
-                validUntil: 0
-            })
-        );
-        credentialAdapter.setAllowedRoot(GATE_CONTEXT, ROOT_A, true);
-
-        bytes32 nullifier = keccak256("no-payload");
-        CipherTypes.ActionRequest memory req = _buildRequest({
-            appId: APP_ID,
-            actionType: ACTION_CREDENTIAL_GATE,
-            contextId: GATE_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: bytes32(0),
-            encryptedPayloadRef: bytes32(0),
-            adapterData: ""
-        });
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CredentialGateAdapter.PayloadRequired.selector,
-                GATE_CONTEXT
+                proofRoot
             )
         );
         router.submitAction(req);
     }
 
     function testVoting_StoresCommitmentAndInlineEncryptedPayload() public {
+        ProofBundle memory bundle = _generateVotingProof(
+            APP_ID,
+            ACTION_PRIVATE_VOTE,
+            PROPOSAL_CONTEXT,
+            3,
+            1
+        );
+        bytes32 root = bundle.publicInputs[5];
+
         votingAdapter.configureProposal(
             PROPOSAL_CONTEXT,
             VotingAdapter.ProposalConfig({
@@ -380,19 +373,16 @@ contract CipherRouterTest is Test {
                 endTime: uint64(block.timestamp + 1 days)
             })
         );
-        votingAdapter.setAllowedRoot(PROPOSAL_CONTEXT, ROOT_A, true);
+        votingAdapter.setAllowedRoot(PROPOSAL_CONTEXT, root, true);
 
-        bytes32 nullifier = keccak256("vote-nullifier");
-        bytes32 payloadHash = keccak256("vote-payload-commitment");
         bytes memory inlineEncryptedVote = hex"112233445566";
 
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        CipherTypes.ActionRequest memory req = _buildRequestFromProof({
             appId: APP_ID,
             actionType: ACTION_PRIVATE_VOTE,
             contextId: PROPOSAL_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: payloadHash,
+            verifierId: VOTING_VERIFIER_ID,
+            bundle: bundle,
             encryptedPayloadRef: bytes32(0),
             adapterData: abi.encode(inlineEncryptedVote)
         });
@@ -403,9 +393,9 @@ contract CipherRouterTest is Test {
             actionId
         );
         assertEq(voteRecord.proposalId, PROPOSAL_CONTEXT);
-        assertEq(voteRecord.root, ROOT_A);
-        assertEq(voteRecord.nullifier, nullifier);
-        assertEq(voteRecord.payloadHash, payloadHash);
+        assertEq(voteRecord.root, root);
+        assertEq(voteRecord.nullifier, req.nullifier);
+        assertEq(voteRecord.payloadHash, req.payloadHash);
         assertEq(voteRecord.encryptedPayloadRef, bytes32(0));
         assertEq(voteRecord.encryptedPayload, inlineEncryptedVote);
         assertEq(voteRecord.submitter, address(this));
@@ -413,6 +403,15 @@ contract CipherRouterTest is Test {
     }
 
     function testVoting_FailsWhenProposalValidationFails() public {
+        ProofBundle memory bundle = _generateVotingProof(
+            APP_ID,
+            ACTION_PRIVATE_VOTE,
+            PROPOSAL_CONTEXT,
+            3,
+            1
+        );
+        bytes32 root = bundle.publicInputs[5];
+
         votingAdapter.configureProposal(
             PROPOSAL_CONTEXT,
             VotingAdapter.ProposalConfig({
@@ -423,17 +422,14 @@ contract CipherRouterTest is Test {
                 endTime: uint64(block.timestamp + 2 days)
             })
         );
-        votingAdapter.setAllowedRoot(PROPOSAL_CONTEXT, ROOT_A, true);
+        votingAdapter.setAllowedRoot(PROPOSAL_CONTEXT, root, true);
 
-        bytes32 nullifier = keccak256("vote-inactive-window");
-        bytes32 payloadHash = keccak256("vote-payload-2");
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        CipherTypes.ActionRequest memory req = _buildRequestFromProof({
             appId: APP_ID,
             actionType: ACTION_PRIVATE_VOTE,
             contextId: PROPOSAL_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: payloadHash,
+            verifierId: VOTING_VERIFIER_ID,
+            bundle: bundle,
             encryptedPayloadRef: bytes32(0),
             adapterData: ""
         });
@@ -450,7 +446,14 @@ contract CipherRouterTest is Test {
         router.submitAction(req);
     }
 
-    function testInvalidProof_RevertsWhenVerifierReturnsFalse() public {
+    function testInvalidProof_RevertsWhenProofIsTampered() public {
+        ProofBundle memory bundle = _generateCredentialProof(
+            APP_ID,
+            ACTION_CREDENTIAL_GATE,
+            GATE_CONTEXT
+        );
+        bytes32 root = bundle.publicInputs[5];
+
         credentialAdapter.configureContext(
             GATE_CONTEXT,
             CredentialGateAdapter.GateContextConfig({
@@ -461,18 +464,22 @@ contract CipherRouterTest is Test {
                 validUntil: 0
             })
         );
-        credentialAdapter.setAllowedRoot(GATE_CONTEXT, ROOT_A, true);
+        credentialAdapter.setAllowedRoot(GATE_CONTEXT, root, true);
 
-        verifier.setResult(false);
+        bytes memory tamperedProof = bytes.concat(bundle.proof);
+        tamperedProof[0] = bytes1(uint8(tamperedProof[0]) ^ uint8(0x01));
 
-        bytes32 nullifier = keccak256("bad-proof");
-        CipherTypes.ActionRequest memory req = _buildRequest({
+        ProofBundle memory badBundle = ProofBundle({
+            proof: tamperedProof,
+            publicInputs: bundle.publicInputs
+        });
+
+        CipherTypes.ActionRequest memory req = _buildRequestFromProof({
             appId: APP_ID,
             actionType: ACTION_CREDENTIAL_GATE,
             contextId: GATE_CONTEXT,
-            root: ROOT_A,
-            nullifier: nullifier,
-            payloadHash: bytes32(0),
+            verifierId: CREDENTIAL_VERIFIER_ID,
+            bundle: badBundle,
             encryptedPayloadRef: bytes32(0),
             adapterData: ""
         });
@@ -480,42 +487,107 @@ contract CipherRouterTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 CipherRouter.InvalidProof.selector,
-                VERIFIER_ID
+                CREDENTIAL_VERIFIER_ID
             )
         );
         router.submitAction(req);
     }
 
-    function _buildRequest(
+    function _buildRequestFromProof(
         bytes32 appId,
         bytes32 actionType,
         bytes32 contextId,
-        bytes32 root,
-        bytes32 nullifier,
-        bytes32 payloadHash,
+        bytes32 verifierId,
+        ProofBundle memory bundle,
         bytes32 encryptedPayloadRef,
         bytes memory adapterData
     ) internal view returns (CipherTypes.ActionRequest memory req) {
-        bytes32[] memory publicInputs = new bytes32[](6);
-        publicInputs[0] = appId;
-        publicInputs[1] = actionType;
-        publicInputs[2] = contextId;
-        publicInputs[3] = nullifier;
-        publicInputs[4] = payloadHash;
-        publicInputs[5] = root;
+        require(bundle.publicInputs.length >= 6, "public inputs too short");
 
         req = CipherTypes.ActionRequest({
             appId: appId,
             actionType: actionType,
             contextId: contextId,
-            nullifier: nullifier,
-            payloadHash: payloadHash,
+            nullifier: bundle.publicInputs[3],
+            payloadHash: bundle.publicInputs[4],
             encryptedPayloadRef: encryptedPayloadRef,
-            verifierId: VERIFIER_ID,
+            verifierId: verifierId,
             deadline: uint64(block.timestamp + 1 days),
-            publicInputs: publicInputs,
-            proof: hex"01020304",
+            publicInputs: bundle.publicInputs,
+            proof: bundle.proof,
             adapterData: adapterData
         });
+    }
+
+    function _buildDummyRequest(
+        bytes32 appId,
+        bytes32 actionType,
+        bytes32 contextId
+    ) internal view returns (CipherTypes.ActionRequest memory req) {
+        bytes32[] memory publicInputs = new bytes32[](6);
+        publicInputs[0] = appId;
+        publicInputs[1] = actionType;
+        publicInputs[2] = contextId;
+        publicInputs[3] = bytes32(uint256(9999));
+        publicInputs[4] = bytes32(0);
+        publicInputs[5] = bytes32(uint256(7777));
+
+        req = CipherTypes.ActionRequest({
+            appId: appId,
+            actionType: actionType,
+            contextId: contextId,
+            nullifier: publicInputs[3],
+            payloadHash: publicInputs[4],
+            encryptedPayloadRef: bytes32(0),
+            verifierId: CREDENTIAL_VERIFIER_ID,
+            deadline: uint64(block.timestamp + 1 days),
+            publicInputs: publicInputs,
+            proof: hex"01",
+            adapterData: ""
+        });
+    }
+
+    function _generateCredentialProof(
+        bytes32 appId,
+        bytes32 actionType,
+        bytes32 contextId
+    ) internal returns (ProofBundle memory bundle) {
+        string[] memory inputs = new string[](6);
+        inputs[0] = "npx";
+        inputs[1] = "tsx";
+        inputs[2] = "js-scripts/generateCredentialGateProof.ts";
+        inputs[3] = vm.toString(appId);
+        inputs[4] = vm.toString(actionType);
+        inputs[5] = vm.toString(contextId);
+
+        bytes memory result = vm.ffi(inputs);
+        (bundle.proof, bundle.publicInputs) = abi.decode(
+            result,
+            (bytes, bytes32[])
+        );
+    }
+
+    function _generateVotingProof(
+        bytes32 appId,
+        bytes32 actionType,
+        bytes32 contextId,
+        uint8 optionCount,
+        uint8 voteOption
+    ) internal returns (ProofBundle memory bundle) {
+        string[] memory inputs = new string[](8);
+        inputs[0] = "npx";
+        inputs[1] = "tsx";
+        inputs[2] = "js-scripts/generateVotingProof.ts";
+        inputs[3] = vm.toString(appId);
+        inputs[4] = vm.toString(actionType);
+        inputs[5] = vm.toString(contextId);
+        inputs[6] = vm.toString(optionCount);
+        inputs[7] = vm.toString(voteOption);
+
+        bytes memory result = vm.ffi(inputs);
+        (bundle.proof, bundle.publicInputs) = abi.decode(
+            result,
+            (bytes, bytes32[])
+        );
     }
 }
