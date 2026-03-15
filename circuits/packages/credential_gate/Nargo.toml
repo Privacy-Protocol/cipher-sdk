@@ -1,7 +1,0 @@
-[package]
-name = "credential_gate_circuit"
-type = "bin"
-authors = [""]
-
-[dependencies]
-cipher_primitives = { path = "../shared" }

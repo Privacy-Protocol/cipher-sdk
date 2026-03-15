@@ -1,3 +1,0 @@
-[workspace]
-members = ["packages/shared", "packages/voting", "packages/credential_gate"]
-default-member = "packages/voting"
