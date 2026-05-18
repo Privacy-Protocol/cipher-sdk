@@ -3,7 +3,7 @@
 pragma solidity ^0.8.27;
 
 import {GovernorConfidential} from "./GovernorConfidential.sol";
-import {FHE, euint64, ebool, euint8, externalEuint64, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint64, ebool, euint8, externalEuint64} from "@fhevm/solidity/lib/FHE.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 abstract contract GovernorCountingSimpleConfidential is GovernorConfidential {
@@ -60,20 +60,26 @@ abstract contract GovernorCountingSimpleConfidential is GovernorConfidential {
     function _countEncryptedVote(
         uint256 proposalId,
         address account,
-        externalEuint8 support,
+        euint8 encryptedSupport,
         euint64 totalWeight,
-        bytes calldata supportProof,
         bytes memory // params
     ) internal virtual override returns (euint64) {
         ProposalVote storage proposalVote = _proposalVotes[proposalId];
+
+        if (!FHE.isInitialized(proposalVote.againstVotes)) {
+            proposalVote.againstVotes = FHE.asEuint64(0);
+            proposalVote.forVotes = FHE.asEuint64(0);
+            proposalVote.abstainVotes = FHE.asEuint64(0);
+            FHE.allowThis(proposalVote.againstVotes);
+            FHE.allowThis(proposalVote.forVotes);
+            FHE.allowThis(proposalVote.abstainVotes);
+        }
 
         if (proposalVote.hasVoted[account]) {
             //TODO ensure this is tested
             revert GovernorAlreadyCastVote(account);
         }
         proposalVote.hasVoted[account] = true;
-
-        euint8 encryptedSupport = FHE.fromExternal(support, supportProof);
 
         // TODO: find a way to check the support type is one of the supported types or throw an error
 
@@ -88,6 +94,9 @@ abstract contract GovernorCountingSimpleConfidential is GovernorConfidential {
         proposalVote.againstVotes = FHE.add(proposalVote.againstVotes, againstIncrement);
         proposalVote.abstainVotes = FHE.add(proposalVote.abstainVotes, abstainIncrement);
         proposalVote.forVotes = FHE.add(proposalVote.forVotes, forIncrement);
+        FHE.allowThis(proposalVote.againstVotes);
+        FHE.allowThis(proposalVote.abstainVotes);
+        FHE.allowThis(proposalVote.forVotes);
 
         return totalWeight;
     }

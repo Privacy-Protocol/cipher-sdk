@@ -4,7 +4,6 @@ target/
 
 plan.md
 
-contracts-01
 
-*.DS_Store
+.DS_Store
 settings.json

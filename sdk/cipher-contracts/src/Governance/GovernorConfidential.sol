@@ -191,12 +191,22 @@ pragma solidity ^0.8.27;
 // }
 
 import {Governor} from "@openzeppelin/contracts/governance/Governor.sol";
-import {FHE, ebool, euint8, euint64, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {
+    FHE,
+    ebool,
+    euint8,
+    euint64,
+    externalEuint8
+} from "@fhevm/solidity/lib/FHE.sol";
+import {
+    SignatureChecker
+} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 abstract contract GovernorConfidential is Governor {
     bytes32 public constant ENCRYPTED_BALLOT_TYPEHASH =
-        keccak256("Ballot(uint256 proposalId,externalEuint8 support,bytes supportProof,address voter,uint256 nonce)");
+        keccak256(
+            "Ballot(uint256 proposalId,externalEuint8 support,bytes supportProof,address voter,uint256 nonce)"
+        );
     bytes32 public constant ENCRYPTED_EXTENDED_BALLOT_TYPEHASH =
         keccak256(
             // solhint-disable-next-line max-line-length
@@ -208,7 +218,9 @@ abstract contract GovernorConfidential is Governor {
     error GovernorConfidential__ProposalStillActive(uint256 proposalId);
     error GovernorConfidential__ResultAlreadyRequested(uint256 proposalId);
     error GovernorConfidential__ResultAlreadyFinalized(uint256 proposalId);
-    error GovernorConfidential__ResultDecryptionNotRequested(uint256 proposalId);
+    error GovernorConfidential__ResultDecryptionNotRequested(
+        uint256 proposalId
+    );
     error GovernorConfidential__ResultNotFinalized(uint256 proposalId);
 
     struct ProposalResult {
@@ -245,11 +257,17 @@ abstract contract GovernorConfidential is Governor {
         ebool encryptedVoteSucceeded
     );
 
-    event ProposalResultFinalized(uint256 indexed proposalId, bool quorumReached, bool voteSucceeded);
+    event ProposalResultFinalized(
+        uint256 indexed proposalId,
+        bool quorumReached,
+        bool voteSucceeded
+    );
 
     constructor(string memory _name) Governor(_name) {}
 
-    function _quorumReached(uint256 proposalId) internal view virtual override returns (bool) {
+    function _quorumReached(
+        uint256 proposalId
+    ) internal view virtual override returns (bool) {
         if (!_proposalResults[proposalId].finalized) {
             revert GovernorConfidential__ResultNotFinalized(proposalId);
         }
@@ -257,7 +275,9 @@ abstract contract GovernorConfidential is Governor {
         return _proposalResults[proposalId].quorumReached;
     }
 
-    function _voteSucceeded(uint256 proposalId) internal view virtual override returns (bool) {
+    function _voteSucceeded(
+        uint256 proposalId
+    ) internal view virtual override returns (bool) {
         if (!_proposalResults[proposalId].finalized) {
             revert GovernorConfidential__ResultNotFinalized(proposalId);
         }
@@ -265,11 +285,17 @@ abstract contract GovernorConfidential is Governor {
         return _proposalResults[proposalId].voteSucceeded;
     }
 
-    function _confidentialQuorum(uint256 timepoint) internal virtual returns (euint64);
+    function _confidentialQuorum(
+        uint256 timepoint
+    ) internal virtual returns (euint64);
 
-    function _encryptedQuorumReached(uint256 proposalId) internal virtual returns (ebool);
+    function _encryptedQuorumReached(
+        uint256 proposalId
+    ) internal virtual returns (ebool);
 
-    function _confidentialVoteSucceeded(uint256 proposalId) internal virtual returns (ebool);
+    function _confidentialVoteSucceeded(
+        uint256 proposalId
+    ) internal virtual returns (ebool);
 
     // function resultDecryptionRequested(uint256 proposalId) public view virtual returns (bool) {
     //     return _proposalResults[proposalId].decryptionRequested;
@@ -279,7 +305,9 @@ abstract contract GovernorConfidential is Governor {
     //     return _proposalResults[proposalId].finalized;
     // }
 
-    function quorumReached(uint256 proposalId) public view virtual returns (bool) {
+    function quorumReached(
+        uint256 proposalId
+    ) public view virtual returns (bool) {
         if (!_proposalResults[proposalId].finalized) {
             revert GovernorConfidential__ResultNotFinalized(proposalId);
         }
@@ -287,7 +315,9 @@ abstract contract GovernorConfidential is Governor {
         return _proposalResults[proposalId].quorumReached;
     }
 
-    function voteSucceeded(uint256 proposalId) public view virtual returns (bool) {
+    function voteSucceeded(
+        uint256 proposalId
+    ) public view virtual returns (bool) {
         if (!_proposalResults[proposalId].finalized) {
             revert GovernorConfidential__ResultNotFinalized(proposalId);
         }
@@ -297,13 +327,23 @@ abstract contract GovernorConfidential is Governor {
 
     function encryptedProposalResult(
         uint256 proposalId
-    ) public view virtual returns (ebool encryptedQuorumReached, ebool encryptedVoteSucceeded) {
+    )
+        public
+        view
+        virtual
+        returns (ebool encryptedQuorumReached, ebool encryptedVoteSucceeded)
+    {
         ProposalResult storage proposalResult = _proposalResults[proposalId];
 
-        return (proposalResult.encryptedQuorumReached, proposalResult.encryptedVoteSucceeded);
+        return (
+            proposalResult.encryptedQuorumReached,
+            proposalResult.encryptedVoteSucceeded
+        );
     }
 
-    function requestProposalResultDecryption(uint256 proposalId) public virtual {
+    function requestProposalResultDecryption(
+        uint256 proposalId
+    ) public virtual {
         if (proposalSnapshot(proposalId) == 0) {
             revert GovernorNonexistentProposal(proposalId);
         }
@@ -316,14 +356,22 @@ abstract contract GovernorConfidential is Governor {
             revert GovernorConfidential__ResultAlreadyRequested(proposalId);
         }
 
-        ebool encryptedQuorumReached = FHE.makePubliclyDecryptable(_encryptedQuorumReached(proposalId));
-        ebool encryptedVoteSucceeded = FHE.makePubliclyDecryptable(_confidentialVoteSucceeded(proposalId));
+        ebool encryptedQuorumReached = FHE.makePubliclyDecryptable(
+            _encryptedQuorumReached(proposalId)
+        );
+        ebool encryptedVoteSucceeded = FHE.makePubliclyDecryptable(
+            _confidentialVoteSucceeded(proposalId)
+        );
 
         proposalResult.decryptionRequested = true;
         proposalResult.encryptedQuorumReached = encryptedQuorumReached;
         proposalResult.encryptedVoteSucceeded = encryptedVoteSucceeded;
 
-        emit ProposalResultDecryptionRequested(proposalId, encryptedQuorumReached, encryptedVoteSucceeded);
+        emit ProposalResultDecryptionRequested(
+            proposalId,
+            encryptedQuorumReached,
+            encryptedVoteSucceeded
+        );
     }
 
     function finalizeProposalResult(
@@ -333,7 +381,9 @@ abstract contract GovernorConfidential is Governor {
     ) public virtual {
         ProposalResult storage proposalResult = _proposalResults[proposalId];
         if (!proposalResult.decryptionRequested) {
-            revert GovernorConfidential__ResultDecryptionNotRequested(proposalId);
+            revert GovernorConfidential__ResultDecryptionNotRequested(
+                proposalId
+            );
         }
         if (proposalResult.finalized) {
             revert GovernorConfidential__ResultAlreadyFinalized(proposalId);
@@ -345,13 +395,20 @@ abstract contract GovernorConfidential is Governor {
 
         FHE.checkSignatures(handles, abiEncodedProposalResult, decryptionProof);
 
-        (bool quorumReached_, bool voteSucceeded_) = abi.decode(abiEncodedProposalResult, (bool, bool));
+        (bool quorumReached_, bool voteSucceeded_) = abi.decode(
+            abiEncodedProposalResult,
+            (bool, bool)
+        );
 
         proposalResult.finalized = true;
         proposalResult.quorumReached = quorumReached_;
         proposalResult.voteSucceeded = voteSucceeded_;
 
-        emit ProposalResultFinalized(proposalId, quorumReached_, voteSucceeded_);
+        emit ProposalResultFinalized(
+            proposalId,
+            quorumReached_,
+            voteSucceeded_
+        );
     }
 
     function _getVotes(
@@ -385,7 +442,15 @@ abstract contract GovernorConfidential is Governor {
         bytes calldata supportProof,
         string memory reason
     ) internal virtual returns (euint64) {
-        return _castEncryptedVote(proposalId, account, support, supportProof, reason, super._defaultParams());
+        return
+            _castEncryptedVote(
+                proposalId,
+                account,
+                support,
+                supportProof,
+                reason,
+                super._defaultParams()
+            );
     }
 
     function _castEncryptedVote(
@@ -396,17 +461,43 @@ abstract contract GovernorConfidential is Governor {
         string memory reason,
         bytes memory params
     ) internal virtual returns (euint64) {
-        super._validateStateBitmap(proposalId, super._encodeStateBitmap(ProposalState.Active));
+        super._validateStateBitmap(
+            proposalId,
+            super._encodeStateBitmap(ProposalState.Active)
+        );
 
         euint8 encryptedSupport = FHE.fromExternal(support, supportProof);
 
-        euint64 totalWeight = _getConfidentialVotes(account, super.proposalSnapshot(proposalId), params);
-        euint64 votedWeight = _countEncryptedVote(proposalId, account, support, totalWeight, supportProof, params);
+        euint64 totalWeight = _getConfidentialVotes(
+            account,
+            super.proposalSnapshot(proposalId),
+            params
+        );
+        euint64 votedWeight = _countEncryptedVote(
+            proposalId,
+            account,
+            encryptedSupport,
+            totalWeight,
+            params
+        );
 
         if (params.length == 0) {
-            emit EncryptedVoteCast(account, proposalId, encryptedSupport, votedWeight, reason);
+            emit EncryptedVoteCast(
+                account,
+                proposalId,
+                encryptedSupport,
+                votedWeight,
+                reason
+            );
         } else {
-            emit EncryptedVoteCastWithParams(account, proposalId, encryptedSupport, votedWeight, reason, params);
+            emit EncryptedVoteCastWithParams(
+                account,
+                proposalId,
+                encryptedSupport,
+                votedWeight,
+                reason,
+                params
+            );
         }
 
         super._tallyUpdated(proposalId);
@@ -427,9 +518,8 @@ abstract contract GovernorConfidential is Governor {
     function _countEncryptedVote(
         uint256 proposalId,
         address account,
-        externalEuint8 support,
+        euint8 support,
         euint64 totalWeight,
-        bytes calldata supportProof,
         bytes memory // params
     ) internal virtual returns (euint64);
 
@@ -449,7 +539,14 @@ abstract contract GovernorConfidential is Governor {
         bytes calldata supportProof
     ) public virtual returns (euint64) {
         address voter = _msgSender();
-        return _castEncryptedVote(proposalId, voter, support, supportProof, reason);
+        return
+            _castEncryptedVote(
+                proposalId,
+                voter,
+                support,
+                supportProof,
+                reason
+            );
     }
 
     function castEncryptedVoteWithReasonAndParams(
@@ -460,7 +557,15 @@ abstract contract GovernorConfidential is Governor {
         bytes calldata supportProof
     ) public virtual returns (euint64) {
         address voter = _msgSender();
-        return _castEncryptedVote(proposalId, voter, support, supportProof, reason, params);
+        return
+            _castEncryptedVote(
+                proposalId,
+                voter,
+                support,
+                supportProof,
+                reason,
+                params
+            );
     }
 
     function castEncryptedVoteBySig(
@@ -470,7 +575,15 @@ abstract contract GovernorConfidential is Governor {
         bytes memory signature,
         bytes calldata supportProof
     ) public virtual returns (euint64) {
-        if (!_validateEncryptedVoteSig(proposalId, support, voter, signature, supportProof)) {
+        if (
+            !_validateEncryptedVoteSig(
+                proposalId,
+                support,
+                voter,
+                signature,
+                supportProof
+            )
+        ) {
             revert GovernorInvalidSignature(voter);
         }
         return _castEncryptedVote(proposalId, voter, support, supportProof, "");
@@ -485,10 +598,28 @@ abstract contract GovernorConfidential is Governor {
         bytes memory signature,
         bytes calldata supportProof
     ) public virtual returns (euint64) {
-        if (!_validateEncryptedExtendedVoteSig(proposalId, support, voter, reason, params, signature, supportProof)) {
+        if (
+            !_validateEncryptedExtendedVoteSig(
+                proposalId,
+                support,
+                voter,
+                reason,
+                params,
+                signature,
+                supportProof
+            )
+        ) {
             revert GovernorInvalidSignature(voter);
         }
-        return _castEncryptedVote(proposalId, voter, support, supportProof, reason, params);
+        return
+            _castEncryptedVote(
+                proposalId,
+                voter,
+                support,
+                supportProof,
+                reason,
+                params
+            );
     }
 
     /// TODO: test this and check if proof needs to be included in the hash
@@ -549,26 +680,3 @@ abstract contract GovernorConfidential is Governor {
             );
     }
 }
-
-/**
- * functions to have here:
- * 1. _castvote ✅
- * 2. _castvote with params ✅
- * 3. _castencryptedvote ✅
- * 4. _castencryptedvote with params ✅
- * 5. _countvote ✅
- * 6. _countencryptedvote ✅
- * 7. castvote ✅
- * 8. castvote with reason ✅
- * 9. castvote with reason and params ✅
- * 10. castvote with reason and params by sig ✅
- * 11. castvote by sig ✅
- * 12. castencryptedvote with reason ✅
- * 13. castencryptedvote with reason and params ✅
- * 14. castencryptedvote with reason and params by sig ✅
- * 15. castencryptedvote by sig ✅
- * 16. _getVotes ✅
- * 17. _getConfidentialVotes ✅
- * 18. _validateVoteSig ✅
- * 19. _validateExtendedVoteSig ✅
- */
