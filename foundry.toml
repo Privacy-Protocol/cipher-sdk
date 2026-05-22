@@ -1,0 +1,14 @@
+[profile.default]
+src = "contracts/contracts"
+test = "test-forge"
+script = "script"
+out = "out"
+libs = ["lib", "contracts/node_modules"]
+remappings = [
+    "forge-fhevm/=lib/forge-fhevm/src/",
+    "@fhevm/host-contracts/=lib/forge-fhevm/src/fhevm-host/",
+    "@openzeppelin/contracts-upgradeable/=lib/forge-fhevm/dependencies/@openzeppelin-contracts-upgradeable-5.1.0/",
+    "@openzeppelin/contracts/=contracts/node_modules/@openzeppelin/contracts/",
+]
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

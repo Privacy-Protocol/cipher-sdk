@@ -1,0 +1,135 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  FOUNDRY_PROFILE: default
+
+jobs:
+  deps:
+    name: Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        id: deps
+        with:
+          path: dependencies
+          key: soldeer-${{ hashFiles('soldeer.lock') }}
+
+      - if: steps.deps.outputs.cache-hit != 'true'
+        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
+
+      - if: steps.deps.outputs.cache-hit != 'true'
+        run: forge soldeer install
+
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
+
+      - run: forge fmt --check
+
+  test:
+    name: Tests
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
+
+      - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: dependencies
+          key: soldeer-${{ hashFiles('soldeer.lock') }}
+
+      - run: forge test -vvv
+
+  deploy:
+    name: Deploy (${{ matrix.backend }})
+    needs: deps
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [anvil, hardhat]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
+
+      - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: dependencies
+          key: soldeer-${{ hashFiles('soldeer.lock') }}
+
+      - name: Setup Hardhat
+        if: matrix.backend == 'hardhat'
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: 22
+
+      - name: Install Hardhat
+        if: matrix.backend == 'hardhat'
+        run: |
+          npm init -y
+          npm pkg set type="module"
+          npm install --save-dev hardhat
+
+      - name: Start node
+        run: |
+          if [[ "${{ matrix.backend }}" == "hardhat" ]]; then
+            echo 'export default {};' > hardhat.config.js
+            npx hardhat node &
+          else
+            anvil &
+          fi
+          for i in $(seq 1 10); do
+            cast client --rpc-url http://localhost:8545 &>/dev/null && echo "Node ready." && break
+            sleep 1
+          done
+
+      - name: Deploy local fixed-address stack
+        run: ./deploy-local.sh
+
+      - name: Validate local fixed-address stack
+        run: RPC_URL=http://localhost:8545 ./script/validate-deployment.sh
+
+      - name: Deploy computed-address stack
+        run: |
+          cp .env.example .env
+          BROADCAST=--broadcast ./deploy.sh
+
+      - name: Validate computed-address stack
+        run: ./script/validate-deployment.sh
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2.1.2
+
+      - run: bun install --frozen-lockfile
+        working-directory: docs
+
+      - run: bun run build
+        working-directory: docs

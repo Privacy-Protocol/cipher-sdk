@@ -1,0 +1,36 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["dependencies"]
+test = "test"
+solc = "0.8.27"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 100
+cbor_metadata = false
+bytecode_hash = "none"
+fs_permissions = [
+    { access = "write", path = "src/fhevm-host/addresses/FHEVMHostAddresses.sol" },
+]
+
+[fuzz]
+runs = 256
+
+[fmt]
+line_length = 120
+
+[lint]
+ignore = ["src/fhevm-host/**/*.sol"]
+exclude_lints = ["asm-keccak256", "mixed-case-function"]
+
+[dependencies]
+"@openzeppelin-contracts" = "5.1.0"
+"@openzeppelin-contracts-upgradeable" = "5.1.0"
+forge-std = "1.14.0"
+"@openzeppelin-confidential-contracts" = { version = "7ac7cee", git = "https://github.com/OpenZeppelin/openzeppelin-confidential-contracts.git", rev = "7ac7cee" }
+"@encrypted-types" = "0.0.4"
+"@fhevm-solidity" = "0.11.1"
+
+[soldeer]
+remappings_version = false
+recursive_deps = true

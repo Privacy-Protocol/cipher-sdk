@@ -3,11 +3,11 @@
 pragma solidity ^0.8.27;
 
 import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
-import {IVotesConfidential} from "contracts/Governance/interfaces/IVotesConfidential.sol";
-import {GovernorCountingSimpleConfidential} from "contracts/Governance/GovernorCountingSimpleConfidential.sol";
-import {GovernorVotesConfidential} from "contracts/Governance/GovernorVotesConfidential.sol";
+import {IVotesConfidential} from "./Governance/interfaces/IVotesConfidential.sol";
+import {GovernorCountingSimpleConfidential} from "./Governance/GovernorCountingSimpleConfidential.sol";
+import {GovernorVotesConfidential} from "./Governance/GovernorVotesConfidential.sol";
 import {GovernorVotesQuorumFractionConfidential} from "./Governance/GovernorVotesQuorumFractionConfidential.sol";
-import {GovernorConfidential} from "contracts/Governance/GovernorConfidential.sol";
+import {GovernorConfidential} from "./Governance/GovernorConfidential.sol";
 
 contract MyGovernor is
     ZamaEthereumConfig,
