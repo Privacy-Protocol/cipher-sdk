@@ -115,8 +115,18 @@ describe("MyGovernor", function () {
     expect(await fhevm.debugger.decryptEuint(FhevmType.euint64, encryptedForVotes)).to.eq(30n);
     expect(await fhevm.debugger.decryptEuint(FhevmType.euint64, encryptedAbstainVotes)).to.eq(0n);
 
+    await expect(governor.requestProposalResultDecryption(proposalId)).to.be.revertedWithCustomError(
+      governor,
+      "GovernorConfidential__ProposalStillActive",
+    );
+
     const voteEnd = await governor.proposalDeadline(proposalId);
     await time.increaseTo(voteEnd + 1n);
+
+    await expect(governor.finalizeProposalResult(proposalId, "0x", "0x")).to.be.revertedWithCustomError(
+      governor,
+      "GovernorConfidential__ResultDecryptionNotRequested",
+    );
 
     await expect(governor.requestProposalResultDecryption(proposalId)).to.emit(
       governor,
@@ -142,6 +152,19 @@ describe("MyGovernor", function () {
     expect(await governor.quorumReached(proposalId)).to.eq(true);
     expect(await governor.voteSucceeded(proposalId)).to.eq(true);
     expect(await governor.state(proposalId)).to.eq(4n);
+
+    await expect(governor.requestProposalResultDecryption(proposalId)).to.be.revertedWithCustomError(
+      governor,
+      "GovernorConfidential__ResultAlreadyRequested",
+    );
+
+    await expect(
+      governor.finalizeProposalResult(
+        proposalId,
+        decryptedResult.abiEncodedClearValues,
+        decryptedResult.decryptionProof,
+      ),
+    ).to.be.revertedWithCustomError(governor, "GovernorConfidential__ResultAlreadyFinalized");
   });
 
   it("rejects regular cleartext voting", async function () {
@@ -181,5 +204,16 @@ describe("MyGovernor", function () {
     await expect(
       governor.connect(signers.alice).castEncryptedVote(proposalId, secondSupport.handle, secondSupport.proof),
     ).to.be.revertedWithCustomError(governor, "GovernorAlreadyCastVote");
+  });
+
+  it("prevents voting on a non-existent proposal", async function () {
+    const { signers, governorAddress, governor } = await deployFixture();
+
+    const nonExistentProposalId = 123n;
+    const support = await encryptVote(governorAddress, signers.alice.address, VOTE_AGAINST);
+
+    await expect(
+      governor.connect(signers.alice).castEncryptedVote(nonExistentProposalId, support.handle, support.proof),
+    ).to.be.revertedWithCustomError(governor, "GovernorNonexistentProposal");
   });
 });
